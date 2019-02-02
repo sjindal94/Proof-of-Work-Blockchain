@@ -1,0 +1,9 @@
+Missing in Distalgo
+
+Whenever a fork loses its blocks are put in unconfirmed transactions which might be used later.
+
+
+https://bitcoin.stackexchange.com/questions/1991/what-is-the-block-maturation-time
+Generated coins can't be spent until the generation transaction has 101 confirmations. Transactions that try to spend generated coins before this will be rejected.
+
+So to avoid that undesirable situation the network requires coinbase tx (rewards to miners) to "mature" or wait 100 confirmations (the client makes this 120 confirmations but only 100 is required by the protocol). If a block is orphaned before it gets 100 blocks deep into the chain, then only the miner is affected.

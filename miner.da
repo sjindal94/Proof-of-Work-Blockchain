@@ -1,0 +1,236 @@
+from blockchain import Blockchain
+from transaction import Transaction, CoinBaseTransaction
+from block import validate_block_struct, Block
+from constants import MAX_NONCE, BLOCKCHAIN_MAXLENGTH
+
+import time
+import json
+
+
+class Miner(process):
+    def setup(nodes, miners, file_):
+        """
+        Instantiate miner with required parameters.
+
+        TODO: orphan_block_pool will be required when there is block loss/delay in the network.
+        """
+        self.neighbors = miners.union(nodes)
+        self._id = str(self)
+        self.pending_transactions = []
+        self.blockchain = Blockchain()
+        self.orphan_block_pool = []
+        self.busy_mining = False
+
+        self.received_blocks= []
+        self.mining_times = []
+
+        self.blocks_mined = []
+
+    def broadcast(msg):
+        """Broadcast a block/transaction to the neighbors."""
+        send(msg, to=neighbors)
+
+    def receive(msg=('transaction', transaction)):
+        """Receive a transaction from the neighbors (nodes)."""
+        transaction = json.loads(transaction)
+        is_transaction_valid = validate_transaction(transaction)
+
+        if not is_transaction_valid:
+            print("Block received is invalid")
+            return
+
+        new_transaction = Transaction(transaction['_id'], transaction['source'], transaction['dest'], transaction['payload'])
+        pending_transactions.append(new_transaction)
+
+    def validate_block(block):
+        """Validate a received block."""
+        return validate_block_struct(block, self.blockchain)
+
+
+    def validate_transaction(tx_dict):
+        """Validate a given transaction"""
+        if set(('_id','source','dest','payload')) <= set(tx_dict):
+            try:
+                Transaction(tx_dict['_id'],tx_dict['source'],tx_dict['dest'],tx_dict['payload'])
+                return True
+            except ValueError as e:
+                print(e)
+                return False
+        else:
+            return False
+
+    def add_block_to_blockchain(block):
+        """
+        Add a computed block to the blockchain.
+
+        Before adding we do several validations to ensure the block is correct.
+        # TODO: Actually test for byzantine failures, where miners are misbehaving and sending wrong data.
+        """
+        block = json.loads(block)
+
+        transactions = []
+        for tx in block['tx_list']:
+            tx = json.loads(tx)
+            transactions.append(Transaction(tx['_id'], tx['source'], tx['dest'], tx['payload']))
+
+        block['tx_list'] = transactions
+
+        is_block_valid = validate_block(block)
+
+        if not is_block_valid:
+            print("Block received is invalid")
+            return
+
+        new_block = Block(block['index'], block['tx_list'], block['previous_hash'],
+                          block['timestamp'], block['difficulty_bits'], nonce=block['nonce'])
+
+        self.received_blocks.append(new_block)
+
+        blockchain.add_block(block=new_block)
+        pending_transactions = list(set(pending_transactions) - set(blockchain.get_latest_block().tx_list))
+        broadcast(('block', new_block.to_json()))
+
+    def receive(msg=('block', block)):
+        """Receive a new block from the neighbors"""
+        if json.loads(block)['blockhash'] not in blockchain.blockmap:
+            add_block_to_blockchain(block)
+
+    def print_status():
+        """Print the status of the blockchain once the mining is completed."""
+        new_json = {"nodes": [], "links": []}
+
+        for block in self.blockchain.blockmap.values():
+            block_data = json.loads(block.to_json())
+            new_json["nodes"].append(block_data)
+
+            if block.previous_hash is not "0":
+                new_json["links"].append({"source": block.previous_hash,
+                                          "target": block.blockhash})
+
+        with open('%s.json' % file_, 'w') as outfile:
+            json.dump(new_json, outfile)
+
+        msg = 'Blockchain of node %s:\n%s\n' % (self, blockchain)
+
+        current_blockchain = blockchain.block_ancestory(blockchain.primary_blockchain_block)
+
+        for block in current_blockchain:
+            msg += '\nBlock: %s\n' % block
+
+            msg += 'Tx:\n'
+            for transaction in block.tx_list:
+                msg += '%s\n' % transaction
+
+        msg += '\n\n'
+        print(dict(self.blockchain._chaingraph))
+
+    def proof_of_work(candidate_block):
+        """
+        Perform the proof of work computation.
+
+        We need to compute a nonce which will give a hash in reduced sample space.
+        To understand this, basically if difficulty is 5, we want to create a nonce
+        such that the blockhash has the first 5 digits as 0.
+
+        The more the difficulty the smaller the sample space to get this value.
+        """
+        target = 2 ** (256 - blockchain.difficulty_bits)
+
+        for nonce in range(MAX_NONCE):
+            -- l
+            previous_hash_set = {b.previous_hash for b in received_blocks}
+            if candidate_block.previous_hash in previous_hash_set:
+                self.new_block = [b
+                                  for b in received_blocks
+                                  if b.previous_hash == candidate_block.previous_hash][0]
+                return False
+
+            candidate_block.nonce = nonce
+            hash_result = candidate_block.blockhash
+
+            if int(hash_result, 16) < target:
+                self.new_block = candidate_block
+                return True
+
+        print("Failed after %d (max_nonce) tries" % candidate_block)
+
+        return False
+
+
+    def mine_block():
+        """
+        Mine a new block with the pending transactions.
+
+        1. Get pending transactions and if there are none dont mine the block.
+        2. Add coinbase transaction to pending transactions.
+        3. Create new candidate block by computing proof of work.
+        4. Do the proof of work. (May be preempted).
+        5. Return the status.
+        """
+        start_time = time.time()
+
+        if not pending_transactions:
+            print("New block already mined, no transactions left")
+            return False
+
+        transaction_data = [CoinBaseTransaction(dest_addr=str(self))] + pending_transactions
+        new_block = blockchain.create_block(transaction_data)
+
+        status = proof_of_work(new_block)
+        end_time = time.time()
+
+        return end_time - start_time, status
+
+    def operate_miner():
+        """
+        Mine a new block for the blockchain.
+
+        Once mined, this block is broadcasted to the neighbors.
+        """
+        await((not busy_mining) and len(pending_transactions) > 1)
+        busy_mining = True
+        output('Mining started %s' % time.time())
+        mining_time, status = mine_block()
+
+        if not status:
+            output('Discard proof of work and start again %s' % time.time())
+        else:
+            blocks_mined.append(new_block)
+            self.mining_times.append(mining_time)
+            output('BLOCK MINED: New block with proof of work has been computed %s' % time.time())
+            status = blockchain.add_block(block=new_block)
+            pending_transactions = list(set(pending_transactions) - set(new_block.tx_list))
+            broadcast(('block', new_block.to_json()))
+
+        busy_mining = False
+
+    def run():
+        for i in range(BLOCKCHAIN_MAXLENGTH):
+            operate_miner()
+
+        print_status()
+        if self.mining_times:
+            print("Mining Time for %s : %s" % (str(self), sum(self.mining_times) / len(self.mining_times)))
+
+        primary_chain = [block.blockhash[-7:]
+                         for block in blockchain.block_ancestory(blockchain.primary_blockchain_block)]
+
+        blocks_mined_hash = [block.blockhash
+                             for block in blocks_mined]
+
+        output("Primary Chain: %s" % primary_chain)
+
+        stale_blocks_mined = [block.blockhash[-7:]
+                              for block in blocks_mined
+                              if block.blockhash not in primary_chain]
+
+        output("Stale blocks: %s" % stale_blocks_mined)
+
+        output('Stale Blocks mined: %s' % len(stale_blocks_mined))
+        output('Total Blocks mined: %s' % len(blocks_mined))
+
+        send(('done', self), to=parent())
+        send(('done',), to=nodes)
+        print('MINER DEAD')
+        await(received(('done',), from_=parent()))
+

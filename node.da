@@ -1,0 +1,47 @@
+from blockchain import Blockchain
+from transaction import Transaction
+
+import random
+import time
+import json
+import uuid
+
+NUM_TRANSACTIONS = 10
+
+class Node(process):
+    def setup(miners, nodes):
+        self._id = str(self)
+        self.neighbors = miners.union(nodes)
+        self.blockchain = Blockchain()
+        self.count_live_miners=len(miners)
+
+    def broadcast(msg):
+        -- l
+        send(msg, to=neighbors)
+
+    def receive(msg=('block', data)):
+        pass
+
+    def receive(msg=('transaction', data), from_=p):
+        pass
+
+    def receive(msg=('done',)):
+        self.count_live_miners-=1
+
+    def create_dummy_transaction():
+        """Create dummy transactions for each node"""
+        dest = random.choice(list(nodes))
+        payload = random.randint(0,10)
+
+        return Transaction(str(uuid.uuid4()), str(self), str(dest), str(payload)).to_json()
+
+    def run():
+        while count_live_miners>0:
+            -- g
+            time.sleep(1)
+            dummy_transaction = create_dummy_transaction()
+            broadcast(('transaction', dummy_transaction))
+
+
+        send(('done', self), to= parent())
+        await(received(('done',), from_=parent()))

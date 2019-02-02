@@ -1,0 +1,27 @@
+from miner import Miner
+from node import Node
+from constants import BLOCKCHAIN_MAXLENGTH
+
+import sys
+import time
+
+def main():
+    nnodes = int(sys.argv[1]) if len(sys.argv) > 1 else 2
+    nminers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+
+    nodes = new(Node, num= nnodes)
+    miners = new(Miner, num= nminers)
+
+    for node in nodes:
+        setup(node, (miners, nodes - {node}, ))
+
+    for idx, miner in enumerate(miners):
+        setup(miner, (nodes, miners - {miner}, 'miner_%s' % (idx + 1)))
+
+    start(nodes | miners)
+    await(each(p in miners.union(nodes), has=received(('done', p))))
+    send(('done',), to=miners.union(nodes))
+
+    print('NO OF MINERS: %d' % nminers)
+    print('NO OF NODES: %d' % nnodes)
+    print('BLOCKCHAIN MAX_LENTGH: %d' % BLOCKCHAIN_MAXLENGTH)
